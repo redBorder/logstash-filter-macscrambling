@@ -18,9 +18,11 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
 
   public
   def register
-    @db_name = "development"  
+    @db_name = "development" 
+
     @ts_start = Time.now
-    @scrambles = nil
+    @scrambles = Hash.new
+    @mac_prefix = 123 #TODO
 
     update_salt
   end
@@ -31,8 +33,17 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
       update_salt
     end
     
-    #TODO
+    mac = event.get("client_mac")
+    spUUID = event.get("service_provider_uuid")
 
+    scramble = @scrambles[spUUID.to_s]["mac_hashing_salt"]
+
+    if scramble and mac then
+
+      #TODO	
+
+    end
+    
     
   end  # def filter
 
@@ -43,16 +54,24 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
       db_config = YAML.load_file("/opt/rb/var/www/rb-rails/config/database.yml")
       db =  PG.connect(dbname: db_config[@db_name]["database"], user: db_config[@db_name]["username"], password: db_config[@db_name]["password"], port: db_config[@db_name]["port"], host: db_config[@db_name]["host"])
         
-      @scrambles = []
+      @scrambles = Hash.new
 
       # Get sensor info from PG
       db.exec("SELECT uuid, property FROM sensors WHERE domain_type=6;") do |result|
         result.each do |row|
-          @scrambles << row
+          
+          #"Property" field has a json embessed
+          json_content = JSON.parse(row["property"])
+          salt = json_content["mac_hashing_salt"])
+          
+          @scrambles[row["uuid"].to_s] = Hash.new
+          @scrambles[row["uuid"].to_s]["mac_hashing_salt"] = salt.decode('hex') # from Hexadecimal to string
+          @scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix.bytes.to_a   #to Byte array
         end
-      ends
+      end
+
     rescue  PG::Error =>e
-      @scrambles = nil
+      @scrambles = Hash.new
       puts "[MacScrambling] " + e.message
     
     ensure
