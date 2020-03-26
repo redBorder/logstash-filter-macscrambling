@@ -18,16 +18,22 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
 
   public
   def register
-    @db_name = "development" 
+    @db_name = "development"
+    @BKDF2_ITERATIONS = 10
+    @PBKDF2_KEYSIZE = 48
+    @HEX_CHARS = "0123456789abcdef".toCharArray()
 
     @ts_start = Time.now
     @scrambles = Hash.new
-    @mac_prefix = 123 #TODO
+    @mac_prefix_fromConfig = "123" #TODO ->config.get("redborder.macscramble.prefix");
+    @mac_prefix_default = "fdah7usad782345@"
 
     update_salt
   end
 
   def filter(event)
+
+  	# Get data once by minute
     ts_end = Time.now - @ts_start
     if ts_end >= 60 then
       update_salt
@@ -38,12 +44,14 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
     spUUID = event.get("service_provider_uuid")
 
     begin
-      scramble = @scrambles[spUUID.to_s]["mac_hashing_salt"]
+      scramble = @scrambles[spUUID.to_s]
+      salt = @scrambles[spUUID.to_s]["mac_hashing_salt"]
+      prefix = @scrambles[spUUID.to_s]["mac_prefix"]
       
       if scramble and mac then     
-        # Decode Hexadecimal value, scramble and write to the mac format
+        # Decode Hexadecimal value, scramble it and write to the mac format
         decoded_mac = [mac.gsub(":","").to_s].pack('H*')
-        decoded_mac_screamble = scramble_mac(decoded_mac)
+        decoded_mac_screamble = scramble_mac(decoded_mac, prefix, salt)
         decoded_mac_screamble_to_mac = to_mac(decoded_mac_screamble, ":")
 
         message.put("client_mac",decoded_mac_screamble_to_mac)
@@ -55,14 +63,32 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
     
   end  # def filter
 
-  def scramble_mac
+  def scramble_mac(_mac, _prefix, _salt)
     #TODO - PKCS5S2ParametersGenerator
-  end
+    key = _prefix<<_mac
+
+    #gen.init(key, this.spSalt, PBKDF2_ITERATIONS);
+    #return ((KeyParameter) gen.generateDerivedParameters(PBKDF2_KEYSIZE)).getKey();
+
+
+  end # def scramble_mac
 
   def to_mac(value, separator)
-    #TODO - StringBuilder
+    #TODO: recheck values
+    String final_s = String.new
+    i=0
+    while i < value.length
+      if i>0
+        final_s<<separator
+      end
+      positive_number = if (value[i] < 0) || !(value[i].is_a? Numeric) then 4 else value[i] end
+      final_s<<HEX_CHARS[positive_number & 0x0F]
+      final_s<<HEX_CHARS[value[i] & 0x0F]
+      i+=1
+    end
 
-  end
+    return final_s
+  end # def to_mac
 
   # Connect to Postgresql DB to get information from sensors
   def update_salt
@@ -87,8 +113,11 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
           @scrambles[row["uuid"].to_s] = Hash.new
           @scrambles[row["uuid"].to_s]["mac_hashing_salt"] = salt  
 
-          if mac_prefix and mac_prefix.to_s.strip.empty?
-            @scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix.bytes.to_a   #to Byte array
+          if mac_prefix_fromConfig and !mac_prefix_fromConfig.to_s.strip.empty?
+            @scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix_fromConfig.chars.to_a   #to Byte array
+          else
+          	@scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix_default.chars.to_a #to Byte array
+          end	
         end
       end
 
