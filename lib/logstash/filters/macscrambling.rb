@@ -33,7 +33,7 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
 
   def filter(event)
 
-  	# Get data once by minute
+    # Get data once by minute
     ts_end = Time.now - @ts_start
     if ts_end >= 60 then
       update_salt
@@ -81,7 +81,7 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
       if i>0
         final_s<<separator
       end
-      positive_number = if (value[i] < 0) || !(value[i].is_a? Numeric) then 4 else value[i] end
+      positive_number = if (!value[i].chr.is_a? Numeric || value[i].chr.to_i < 0) then 4 else value[i] end
       final_s<<HEX_CHARS[positive_number & 0x0F]
       final_s<<HEX_CHARS[value[i] & 0x0F]
       i+=1
@@ -114,10 +114,10 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
           @scrambles[row["uuid"].to_s]["mac_hashing_salt"] = salt  
 
           if mac_prefix_fromConfig and !mac_prefix_fromConfig.to_s.strip.empty?
-            @scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix_fromConfig.chars.to_a   #to Byte array
+            @scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix_fromConfig.bytes.to_a   #to Byte array
           else
-          	@scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix_default.chars.to_a #to Byte array
-          end	
+            @scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix_default.bytes.to_a #to Byte array
+          end
         end
       end
 
