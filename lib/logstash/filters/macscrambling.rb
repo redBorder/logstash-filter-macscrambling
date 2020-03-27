@@ -19,9 +19,11 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
   public
   def register
     @db_name = "development"
+    @db_config = YAML.load_file("/opt/rb/var/www/rb-rails/config/database.yml")
+
     @BKDF2_ITERATIONS = 10
     @PBKDF2_KEYSIZE = 48
-    @HEX_CHARS = "0123456789abcdef".toCharArray()
+    @HEX_CHARS = "0123456789abcdef".chars.to_a
 
     @ts_start = Time.now
     @scrambles = Hash.new
@@ -70,6 +72,7 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
     #gen.init(key, this.spSalt, PBKDF2_ITERATIONS);
     #return ((KeyParameter) gen.generateDerivedParameters(PBKDF2_KEYSIZE)).getKey();
 
+    
 
   end # def scramble_mac
 
@@ -95,8 +98,7 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
     begin
         
       # PG connection
-      db_config = YAML.load_file("/opt/rb/var/www/rb-rails/config/database.yml")
-      db =  PG.connect(dbname: db_config[@db_name]["database"], user: db_config[@db_name]["username"], password: db_config[@db_name]["password"], port: db_config[@db_name]["port"], host: db_config[@db_name]["host"])
+      db =  PG.connect(dbname: @db_config[@db_name]["database"], user: @db_config[@db_name]["username"], password: @db_config[@db_name]["password"], port: @db_config[@db_name]["port"], host: @db_config[@db_name]["host"])
         
       @scrambles = Hash.new
 
