@@ -10,6 +10,7 @@ require 'fileutils'
 require 'aws'
 require 'zk'
 require 'socket'
+require 'openssl'
 
 
 class LogStash::Filters::MacScrambling < LogStash::Filters::Base
@@ -62,18 +63,19 @@ class LogStash::Filters::MacScrambling < LogStash::Filters::Base
       @scrambles = Hash.new
       puts "GeneralSecurityException"
     end
-    
   end  # def filter
 
   def scramble_mac(_mac, _prefix, _salt)
-    #TODO - PKCS5S2ParametersGenerator
-    key = _prefix<<_mac
-
-    #gen.init(key, this.spSalt, PBKDF2_ITERATIONS);
-    #return ((KeyParameter) gen.generateDerivedParameters(PBKDF2_KEYSIZE)).getKey();
-
-    
-
+    # TODO: checkFinalValues In Java there are signed bytes
+    digest_key = nil
+    begin
+      key = _prefix<<_mac
+      digest_key = OpenSSL::PKCS5.pbkdf2_hmac(key, _salt, @BKDF2_ITERATIONS, @PBKDF2_KEYSIZE/8, 'sha256')
+    rescue
+      digest_key = nil
+      puts "GeneralSecurityException, OpenSSL"
+    end
+    return digest_key
   end # def scramble_mac
 
   def to_mac(value, separator)
