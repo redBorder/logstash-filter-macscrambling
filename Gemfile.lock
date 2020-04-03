@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    logstash-filter-macscrambling (1.0.0)
+    logstash-filter-macscrambling (1.0.3)
       logstash-core-plugin-api (~> 2.0)
 
 GEM
@@ -126,6 +126,7 @@ PLATFORMS
 
 DEPENDENCIES
   logstash-devutils
+  logstash-filter-macscrambling!
 
 BUNDLED WITH
    2.1.4

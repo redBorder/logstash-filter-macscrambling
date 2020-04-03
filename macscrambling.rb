@@ -5,8 +5,11 @@ require "logstash/namespace"
 
 require 'pg'
 require 'json'
+#require 'iso8601'
 require 'yaml'
 require 'fileutils'
+#require 'aws'
+#require 'zk'
 require 'socket'
 require 'openssl'
 
@@ -18,7 +21,7 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   
   public
   def register
-    @logger.info("[Macscrambling] testing: Register")
+    @logger.info("[Macscrambling] Register")
     @mac_prefix = "fdah7usad782345@"
     @db_name = "development"
     @db_config = YAML.load_file("/opt/rb/var/www/rb-rails/config/database.yml")
@@ -40,48 +43,47 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
     if ts_end >= 60 then
       update_salt
       @ts_start = Time.now
-      @logger.info("[Macscrambling] Loaded Scrambles")
+      @logger.info("[Macscrambling] Updated scramble:" + @scrambles.keys.join)
     end
     
     if !@scrambles
-      @logger.info("[Macscrambling] No scrambles in DB")
+      @logger.info("[Macscrambling] No scrambles")
     end
 
     mac = event.get("client_mac")
     spUUID = event.get("service_provider_uuid")
+    @logger.info("[Macscrambling] " + mac.to_s + ", " + spUUID)
+    @logger.info("[Macscrambling] " + @scrambles.values.join)
+    @logger.info("[Macscrambling] " + @scrambles.keys.to_s)
     begin
       if @scrambles.key?(spUUID.to_s)
         scramble = @scrambles[spUUID.to_s]
         salt = @scrambles[spUUID.to_s]["mac_hashing_salt"]
         prefix = @scrambles[spUUID.to_s]["mac_prefix"]
-        @logger.info("[MacScrambling] testing: mac:" + mac.to_s + ", salt:" + salt.to_s + ", prefix:" + prefix.to_s)
+        
+        @logger.error("[MacScrambling] scramble:" + scramble.to_s + ", salt:" + salt.to_s + ", prefix:" + prefix.to_s)
         if scramble and mac then
           # Decode Hexadecimal value, scramble it and write to the mac format
-          filtered_mac = mac.gsub(":","").to_s  #[mac.gsub(":","").to_s].pack('H*')
-          @logger.info("[Macscrambling] testing: filtered mac: " + filtered_mac.to_s)
-
-          decoded_mac_scramble = scramble_mac(filtered_mac, prefix, salt)
-          @logger.info("[Macscrambling] testing: scrambled mac: " + decoded_mac_scramble.to_s)
-
-          decoded_mac_scramble_to_mac = to_mac(decoded_mac_scramble, ":")
-          @logger.info("[Macscrambling] testing: mac:" + decoded_mac_scramble_to_mac.to_s)
-          event.set("client_mac",decoded_mac_scramble_to_mac)
+          decoded_mac = [mac.gsub(":","").to_s].pack('H*')
+          decoded_mac_screamble = scramble_mac(decoded_mac, prefix, salt)
+          decoded_mac_screamble_to_mac = to_mac(decoded_mac_screamble, ":")
+          
+          event.put("client_mac",decoded_mac_screamble_to_mac)
         end
       end
     rescue => e
       @scrambles = Hash.new
       @logger.error("[MacScrambling] General security exception:" + e.to_s)
     end
-    filter_matched(event)
   end  # def filter
   
   def scramble_mac(_mac, _prefix, _salt)
     # TODO: checkFinalValues In Java there are signed bytes
     digest_key = nil
     begin
-      key =_prefix << _mac
-      @logger.info("[Macscrambling] testing: key:" + key) #For testing
+      key = _prefix << _mac
       digest_key = OpenSSL::PKCS5.pbkdf2_hmac(key, _salt, @BKDF2_ITERATIONS, @PBKDF2_KEYSIZE/8, 'sha256')
+      
     rescue => e
       digest_key = nil
       @logger.error("[MacScrambling] OpenSSL:" + e.to_s)
@@ -97,13 +99,11 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
       if i>0
         final_s<<separator
       end
-      #@logger.info("[Macscrambling] while: " + value[i].chr)
-      #positive_number = if (!value[i].chr.is_a? Numeric || value[i].to_i < 0) then 4 else value[i] end
-      positive_number = if (!value[i].chr.is_a? Numeric || value[i].chr.to_i < 0) then 4 else value[i].to_i end
-      index1 = positive_number # & 0x0F
-      index2 = value[i].to_i # & 0x0F
-      final_s << @HEX_CHARS[index1]
-      final_s << @HEX_CHARS[index2]
+      positive_number = if (!value[i].chr.is_a? Numeric || value[i].chr.to_i < 0) then 4 else value[i] end
+      index1 = positive_number & 0x0F
+      index2 = value[i] & 0x0F
+      final_s << @HEX_CHARS[positive_number]
+      final_s << @HEX_CHARS[value[i]]
       i+=1
     end
     
@@ -130,8 +130,8 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
           
           @scrambles[row["uuid"].to_s] = Hash.new
           @scrambles[row["uuid"].to_s]["mac_hashing_salt"] = salt
-          @scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix.to_s #.bytes.to_a   #to Byte array
-          @logger.info("[MacScrambling] testing: Database keys:" + @scrambles.keys.to_s) # For testing
+          @scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix.bytes.to_a   #to Byte array
+          @logger.info("[MacScrambling] Database:" + @scrambles.keys.to_s)
         end
       end
     
