@@ -9,27 +9,41 @@ require 'yaml'
 require 'fileutils'
 require 'socket'
 require 'openssl'
+require 'time'
+require 'dalli'
 
 
 class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   
   config_name "macscrambling"
+  config :memcached_server,  :validate => :string, :default => "",  :required => false
   
   public
   def register
+    #@db_name = "development"
+    #@db_config = YAML.load_file("/opt/rb/var/www/rb-rails/config/database.yml")
+    # Constant
     @mac_prefix = 'fdah7usad782345@'
-    @db_name = "development"
-    @db_config = YAML.load_file("/opt/rb/var/www/rb-rails/config/database.yml")
- 
     @BKDF2_ITERATIONS = 10
     @PBKDF2_KEYSIZE = 6
     @HEX_CHARS = "0123456789abcdef".chars.to_a
     
-    @ts_start = Time.now
-    @scrambles = Hash.new
+    @memcached_server = MemcachedConfig::servers.first if @memcached_server.empty?
+    @memcached = Dalli::Client.new(@memcached_server, {:expires_in => 0, :value_max_bytes => 4000000}) 
+    @scrambles = memcached.get("scrambles") || {}
+    @last_refresh_stores = nil
     
-    update_salt
-  end
+    #update_salt
+  end #def register
+  
+
+  def refresh_stores
+    return nil unless @last_refresh_stores.nil? || ((Time.now - @last_refresh_stores) > (60 * 5))
+    @last_refresh_stores = Time.now
+    e = LogStash::Event.new
+    e.set("refresh_stores",true)
+    return e
+  end # def refresh_stores
   
   def filter(event)
     
@@ -63,6 +77,9 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
       @scrambles = Hash.new
       @logger.error("[MacScrambling] General security exception:" + e.to_s)
     end
+    event_refresh = refresh_stores
+    yield event_refresh if event_refresh
+
     filter_matched(event)
   end  # def filter
   
