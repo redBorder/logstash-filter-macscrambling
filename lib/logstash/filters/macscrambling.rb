@@ -28,7 +28,6 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
     @memcached_server = MemcachedConfig::servers.first if @memcached_server.empty?
     @memcached = Dalli::Client.new(@memcached_server, {:expires_in => 0, :value_max_bytes => 4000000}) 
     @scrambles = @memcached.get("scrambles") || {}
-    @mac_prefix = @memcached.get("mac_prefix") || ''
     @last_refresh_stores = nil
     
   end #def register
