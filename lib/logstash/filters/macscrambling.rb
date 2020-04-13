@@ -20,20 +20,17 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   
   public
   def register
-    #@db_name = "development"
-    #@db_config = YAML.load_file("/opt/rb/var/www/rb-rails/config/database.yml")
     # Constant
-    @mac_prefix = 'fdah7usad782345@'
     @BKDF2_ITERATIONS = 10
     @PBKDF2_KEYSIZE = 6
     @HEX_CHARS = "0123456789abcdef".chars.to_a
     
     @memcached_server = MemcachedConfig::servers.first if @memcached_server.empty?
     @memcached = Dalli::Client.new(@memcached_server, {:expires_in => 0, :value_max_bytes => 4000000}) 
-    @scrambles = memcached.get("scrambles") || {}
+    @scrambles = @memcached.get("scrambles") || {}
+    @mac_prefix = @memcached.get("scrambles") || ''
     @last_refresh_stores = nil
     
-    #update_salt
   end #def register
   
 
@@ -46,14 +43,6 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   end # def refresh_stores
   
   def filter(event)
-    
-    # Get data once by minute
-    ts_end = Time.now - @ts_start
-    if ts_end >= 60 then
-      update_salt
-      @ts_start = Time.now
-      @logger.info("[Macscrambling] Loaded Scrambles")
-    end
     
     if !@scrambles
       @logger.info("[Macscrambling] No scrambles in database")
@@ -115,35 +104,4 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
     return final_s
   end # def to_mac
   
-  
-  # Connect to Postgresql DB to get information from sensors
-  def update_salt
-    begin      
-      # PG connection
-      db =  PG.connect(dbname: @db_config[@db_name]["database"], user: @db_config[@db_name]["username"], password: @db_config[@db_name]["password"], port: @db_config[@db_name]["port"], host: @db_config[@db_name]["host"])
-          
-      @scrambles = Hash.new
-      # Get sensor info from PG
-      db.exec("SELECT uuid, property FROM sensors WHERE domain_type=6;") do |result|
-        result.each do |row|
-              
-          #"Property" field has a json embessed
-          json_content = JSON.parse(row["property"])
-          
-          # Decoding from Hexadecimal to string
-          salt = [json_content["mac_hashing_salt"].to_s].pack('H*')
-          
-          @scrambles[row["uuid"].to_s] = Hash.new
-          @scrambles[row["uuid"].to_s]["mac_hashing_salt"] = salt.to_s
-          @scrambles[row["uuid"].to_s]["mac_prefix"] = @mac_prefix.to_s
-        end
-      end
-    
-    rescue  => e
-      @scrambles = Hash.new
-      @logger.error("[MacScrambling] Database:" + e.to_s)
-    ensure
-      db.close if db
-    end
-  end  # def update_salt
-end    # class Logstash::Filter::MacScrambling
+end # class Logstash::Filter::MacScrambling
