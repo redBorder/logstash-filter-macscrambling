@@ -35,37 +35,41 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
     @last_refresh_stores = Time.now
     e = LogStash::Event.new
     e.set("refresh_stores",true)
+    @scrambles = @memcached.get("scrambles")
     return e
   end 
 
   def filter(event)
-    @scrambles = @memcached.get("scrambles") || {}
+    unless @scrambles.empty?
+      mac = event.get("client_mac")
+      sp_uuid = event.get("service_provider_uuid")
+      if mac && sp_uuid 
+        begin
+          scramble = @scrambles[sp_uuid] if @scrambles[sp_uuid]
+          if scramble
+            salt = scramble["mac_hashing_salt"] if scramble["mac_hashing_salt"]
+            prefix = scramble["mac_prefix"] || @mac_prefix
+            if salt
+              key = "#{prefix}#{mac.gsub(':','')}"
+              client_mac = OpenSSL::PKCS5.pbkdf2_hmac_sha1(key,salt,10,6) \
+                                         .unpack('C*') \
+                                         .map{ |b| "%02X" % b } \
+                                         .join('') \
+                                         .scan(/../) \
+                                         .join(":").downcase 
 
-    if @scrambles.empty?
-      @loggger.info "No scrambles"
-      return
-    end
-    mac = event.get("client_mac")
-    sp_uuid = event.get("service_provider_uuid")
-    if mac && sp_uuid 
-      begin
-        scramble = @scrambles[sp_uuid] if @scrambles[sp_uuid]
-        if scramble
-          salt = scramble["mac_hashing_salt"] if scramble["mac_hashing_salt"]
-          prefix = scramble["mac_prefix"] || @mac_prefix
-          if salt
-            key = "#{prefix}#{mac.gsub(':','')}"
-            client_mac = OpenSSL::PKCS5.pbkdf2_hmac_sha1(key,salt,10,6).unpack('C*').map{ |b| "%02X" % b }.join('').scan(/../).join(":").downcase 
-            event.set("client_mac",client_mac)
+              event.set("client_mac",client_mac)
+              #event.set("original_client_mac",mac)
+            end
           end
+        rescue => e
+          @logger.error("[MacScrambling] Exception:" + e.to_s)
         end
-      rescue => e
-        @logger.error("[MacScrambling] Exception:" + e.to_s)
       end
     end
     event_refresh = refresh_stores
     yield event_refresh if event_refresh
-
+    
     filter_matched(event)
   end  # def filter
   
