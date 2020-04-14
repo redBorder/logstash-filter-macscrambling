@@ -17,6 +17,7 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   
   config_name "macscrambling"
   config :memcached_server,  :validate => :string, :default => nil,  :required => false
+  config :send_refresh_store,  :validate => :boolean, :default => true,  :required => false
    
   public
   def register
@@ -68,7 +69,7 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
       end
     end
     event_refresh = refresh_stores
-    yield event_refresh if event_refresh
+    yield event_refresh if event_refresh && @send_refresh_store
     
     filter_matched(event)
   end  # def filter
