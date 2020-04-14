@@ -16,16 +16,13 @@ require 'dalli'
 class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   
   config_name "macscrambling"
-  config :memcached_server,  :validate => :string, :default => "",  :required => false
-  
+  config :memcached_server,  :validate => :string, :default => nil,  :required => false
+   
   public
   def register
     # Constant
-    @BKDF2_ITERATIONS = 10
-    @PBKDF2_KEYSIZE = 6
-    @HEX_CHARS = "0123456789abcdef".chars.to_a
-    
-    @memcached_server = MemcachedConfig::servers.first if @memcached_server.empty?
+    @mac_prefix = "fdah7usad782345@" 
+    @memcached_server = MemcachedConfig::servers.first unless @memcached_server
     @memcached = Dalli::Client.new(@memcached_server, {:expires_in => 0, :value_max_bytes => 4000000}) 
     @scrambles = @memcached.get("scrambles") || {}
     @last_refresh_stores = nil
@@ -39,31 +36,32 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
     e = LogStash::Event.new
     e.set("refresh_stores",true)
     return e
-  end # def refresh_stores
-  
-  def filter(event)
-    
-    if !@scrambles
-      @logger.info("[Macscrambling] No scrambles in database")
-    end
+  end 
 
+  def filter(event)
+    @scrambles = @memcached.get("scrambles") || {}
+
+    if @scrambles.empty?
+      @loggger.info "No scrambles"
+      return
+    end
     mac = event.get("client_mac")
-    spUUID = event.get("service_provider_uuid")
-    begin
-      if @scrambles.key?(spUUID.to_s)
-        scramble = @scrambles[spUUID.to_s]
-        salt = @scrambles[spUUID.to_s]["mac_hashing_salt"]
-        prefix = @scrambles[spUUID.to_s]["mac_prefix"]
-        if scramble and mac then
-          # Decode Hexadecimal value, scramble it and write to the mac format
-          decoded_mac_scramble = scramble_mac(mac, prefix, salt)
-          decoded_mac_scramble_to_mac = to_mac(decoded_mac_scramble, ":")
-          event.set("client_mac",decoded_mac_scramble_to_mac)
+    sp_uuid = event.get("service_provider_uuid")
+    if mac && sp_uuid 
+      begin
+        scramble = @scrambles[sp_uuid] if @scrambles[sp_uuid]
+        if scramble
+          salt = scramble["mac_hashing_salt"] if scramble["mac_hashing_salt"]
+          prefix = scramble["mac_prefix"] || @mac_prefix
+          if salt
+            key = "#{prefix}#{mac.gsub(':','')}"
+            client_mac = OpenSSL::PKCS5.pbkdf2_hmac_sha1(key,salt,10,6).unpack('C*').map{ |b| "%02X" % b }.join('').scan(/../).join(":").downcase 
+            event.set("client_mac",client_mac)
+          end
         end
+      rescue => e
+        @logger.error("[MacScrambling] Exception:" + e.to_s)
       end
-    rescue => e
-      @scrambles = Hash.new
-      @logger.error("[MacScrambling] General security exception:" + e.to_s)
     end
     event_refresh = refresh_stores
     yield event_refresh if event_refresh
@@ -71,36 +69,5 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
     filter_matched(event)
   end  # def filter
   
-  def scramble_mac(_mac, _prefix, _salt)
-    digest_key = nil
-    begin
-      array_a = _prefix.to_s.bytes.to_a
-      array_b = [_mac.gsub(":","")].pack('H*').bytes.to_a
-      key = (array_a << array_b).flatten
-      salty = _salt.bytes.to_a
-      digest_key = OpenSSL::PKCS5.pbkdf2_hmac(key.to_s, salty.to_s, @BKDF2_ITERATIONS, @PBKDF2_KEYSIZE, 'sha256')
-    rescue => e
-      digest_key = nil
-      @logger.error("[MacScrambling] OpenSSL:" + e.to_s)
-    end
-    return digest_key
-  end # def scramble_mac
-  
-  def to_mac(value, separator)
-    String final_s = String.new
-    i=0
-    byte_array = value.bytes.to_a
-    while i < byte_array.length
-      if i>0
-        final_s << separator
-      end
-      final_s << @HEX_CHARS[(byte_array[i] >> 4) & 15]
-      final_s << @HEX_CHARS[byte_array[i] & 15]
-      
-      i+=1
-    end
-    
-    return final_s
-  end # def to_mac
-  
+ 
 end # class Logstash::Filter::MacScrambling
