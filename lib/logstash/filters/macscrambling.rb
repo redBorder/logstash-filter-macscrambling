@@ -17,7 +17,6 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   
   config_name "macscrambling"
   config :memcached_server,  :validate => :string, :default => nil,  :required => false
-  config :send_refresh_store,  :validate => :boolean, :default => true,  :required => false
    
   public
   def register
@@ -26,20 +25,9 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
     @memcached_server = MemcachedConfig::servers.first unless @memcached_server
     @memcached = Dalli::Client.new(@memcached_server, {:expires_in => 0, :value_max_bytes => 4000000}) 
     @scrambles = @memcached.get("scrambles") || {}
-    @last_refresh_stores = nil
     
   end #def register
   
-
-  def refresh_stores
-    return nil unless @last_refresh_stores.nil? || ((Time.now - @last_refresh_stores) > (60 * 5))
-    @last_refresh_stores = Time.now
-    e = LogStash::Event.new
-    e.set("refresh_stores",true)
-    @scrambles = @memcached.get("scrambles")
-    return e
-  end 
-
   def filter(event)
     unless @scrambles.empty?
       mac = event.get("client_mac")
@@ -68,8 +56,6 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
         end
       end
     end
-    event_refresh = refresh_stores
-    yield event_refresh if event_refresh && @send_refresh_store
     
     filter_matched(event)
   end  # def filter
