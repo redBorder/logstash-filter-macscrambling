@@ -12,6 +12,7 @@ require 'openssl'
 require 'time'
 require 'dalli'
 
+require_relative "util/memcached_config"
 
 class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   
@@ -22,7 +23,7 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   def register
     # Constant
     @mac_prefix = "fdah7usad782345@" 
-    @memcached_server = MemcachedConfig::servers.first unless @memcached_server
+    @memcached_server = MemcachedConfig::servers unless @memcached_server
     @memcached = Dalli::Client.new(@memcached_server, {:expires_in => 0, :value_max_bytes => 4000000}) 
     @scrambles = @memcached.get("scrambles") || {}
     
