@@ -18,6 +18,7 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
   
   config_name "macscrambling"
   config :memcached_server,  :validate => :string, :default => nil,  :required => false
+  config :update_rate,       :validate => :number, :default => 300,  :required => false
    
   public
   def register
@@ -25,11 +26,16 @@ class LogStash::Filters::Macscrambling < LogStash::Filters::Base
     @mac_prefix = "fdah7usad782345@" 
     @memcached_server = MemcachedConfig::servers unless @memcached_server
     @memcached = Dalli::Client.new(@memcached_server, {:expires_in => 0, :value_max_bytes => 4000000}) 
-    @scrambles = @memcached.get("scrambles") || {}
-    
+    update_scrambles 
   end #def register
-  
+
+  def update_scrambles
+    @last_update = Time.now
+    @scrambles = @memcached.get("scrambles") || {}
+  end 
+
   def filter(event)
+    update_scrambles  if (Time.now - @last_update) > @update_rate
     unless @scrambles.empty?
       mac = event.get("client_mac")
       sp_uuid = event.get("service_provider_uuid")
