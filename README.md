@@ -1,94 +1,37 @@
-# Summary
+# Logstash Plugin
 
-## Entrada
+This is a plugin for [Logstash](https://github.com/elastic/logstash).
+
+This filter will hash the mac_address consistently in the same service provider.
+
+Protect the logs so that MAC addresses cannot be traced across different domains, while maintaining relative uniqueness to quantitatively identify events through the MAC.
+
+## Documentation
+
+## Target input fields
 
 Se presupone la presencian de los campos:
-- client_mac
-- service_provider_uuid
+- **client_mac**
+- **service_provider_uuid**
 
-## Salida
+## Output fields
 
-- El valor de client_mac es sustituido
+- **client_mac**: replaced for a hash
+- **service_provider_uuid**: no alteration
 
-# Qué hace este filtro:
+## What filter does
 
-Para cada evento que tenga **client_mac** y **service_provider_uuid**:
+Based on **service_provider_uuid** value:
 
-1. Busca el **scramble** correspondiente en **Memcached**.
-2. Si existe un mac_hashing_salt, genera una MAC ofuscada usando PBKDF2 + prefijo.
-3. Reemplaza la **client_mac** original en el evento por la ofuscada.
-4. Actualiza los scrambles desde Memcached automáticamente cada **update_rate** segundos.
+1. Searchs **scramble** in **Memcached**.
+2. Only if mac_hashing_salt exist, generates a ofuscated MAC using PBKDF2 + prefix.
+3. Replaces original **client_mac** with the ofuscated one.
 
-## En diagrama de flujo (GPT made)
+**scrambles** are constantly updated in Memcached.
 
-+-------------------+
-|  Evento Logstash  |
-|  Contiene los campos |
-|  client_mac       |
-|  service_provider_uuid |
-+-------------------+
-          |
-          v
-+---------------------------+
-|  Verifica scrambles cache |
-|  (Memcached)              |
-+---------------------------+
-          |
-          v
-+---------------------------+
-|  Existe scramble para     |
-|  este sp_uuid?            |
-+---------------------------+
-     |           |
-   No|           |Sí
-     v           v
-  [Salta]    +------------------------+
-             |  Obtiene:              |
-             |  - mac_hashing_salt    |
-             |  - mac_prefix          |
-             +------------------------+
-                        |
-                        v
-             +------------------------+
-             |  Construye la key:     |
-             |  key = prefix + MAC    |
-             |  (sin ":")             |
-             +------------------------+
-                        |
-                        v
-             +------------------------+
-             |  Aplica PBKDF2 HMAC    |
-             |  SHA1 con:             |
-             |  - key                  |
-             |  - salt                 |
-             |  - 10 iteraciones       |
-             |  - 6 bytes salida       |
-             +------------------------+
-                        |
-                        v
-             +------------------------+
-             |  Convierte bytes a HEX  |
-             |  y reconstruye formato |
-             |  xx:xx:xx:xx:xx:xx     |
-             +------------------------+
-                        |
-                        v
-             +------------------------+
-             |  Reemplaza client_mac  |
-             |  en el evento          |
-             +------------------------+
-                        |
-                        v
-             +------------------------+
-             | Evento modificado listo|
-             +------------------------+
+## How to implement the logstash filter
 
-
-# Propósito:
-
-Protege los logs para que las MAC no sean rastreables desde diferentes dominios pero mantienen unicidad relativa para indentificar cuantitativamente los eventos a través de la MAC.
-
-# Ejemplo de uso:
+Add the redfish input in your Logstash pipeline as follow:
 
 ``` conf
 filter {
@@ -97,3 +40,65 @@ filter {
   }
 }
 ```
+
+## Need Help?
+
+Need help? Try sending us an email to support@redborder.com
+
+## Developing
+
+### 1. Plugin Developement and Testing
+
+#### Code
+- To get started, you'll need JRuby with the Bundler gem installed:
+```sh 
+rvm install jruby-9.2.6.0
+```
+
+- Clone from the GitHub [logstash-filter-macscrambling](https://github.com/redBorder/logstash-filter-macscrambling)
+
+- Install dependencies
+```sh
+bundle install
+```
+
+#### Test
+
+- Update your dependencies
+
+```sh
+bundle install
+```
+
+- Run tests
+
+```sh
+bundle exec rspec
+```
+
+### 2. Running your unpublished Plugin in Logstash
+
+#### 2.1 Run in an installed Logstash
+
+- Build your plugin gem
+```sh
+gem build logstash-filter-macscrambling.gemspec
+```
+- Install the plugin from the Logstash home
+```sh
+# Logstash 2.3 and higher
+bin/logstash-plugin install --no-verify
+
+# Prior to Logstash 2.3
+bin/plugin install --no-verify
+
+```
+- Start Logstash and proceed to test the plugin
+
+## Contributing
+
+All contributions are welcome: ideas, patches, documentation, bug reports, complaints, and even something you drew up on a napkin.
+
+Programming is not a required skill. Whatever you've seen about open source and maintainers or community members  saying "send patches or die" - you will not see that here.
+
+It is more important to the community that you are able to contribute.
