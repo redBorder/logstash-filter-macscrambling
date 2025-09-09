@@ -87,3 +87,13 @@ Para cada evento que tenga **client_mac** y **service_provider_uuid**:
 # Propósito:
 
 Protege los logs para que las MAC no sean rastreables desde diferentes dominios pero mantienen unicidad relativa para indentificar cuantitativamente los eventos a través de la MAC.
+
+# Ejemplo de uso:
+
+``` conf
+filter {
+  macscrambling {
+    memcached_server => "memcached.service"
+  }
+}
+```
